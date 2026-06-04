@@ -1,37 +1,49 @@
 // app/workers/page.tsx
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import useSWR from 'swr';
 import WorkerCard from '@/components/WorkerCard';
-import { WorkerUI } from '@/types/worker';
+import { WorkerUI, WorkerDB } from '@/types/worker';
 import { Search, Plus, Filter } from 'lucide-react';
 
+// 1. Define the SWR Fetcher
+// This function tells SWR how to get the data and parse the JSON
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch workers');
+  const json = await res.json();
+  return json.data; // Your Express controller sends the array inside 'data'
+};
+
 export default function WorkersPage() {
-  const [workers, setWorkers] = useState<WorkerUI[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // When ready, replace the setTimeout block with your real backend fetch:
-        // const res = await fetch('http://localhost:5001/api/v1/workers');
-        // const result = await res.json();
-        
-        setTimeout(() => {
-          setWorkers(MOCK_WORKERS);
-          setIsLoading(false);
-        }, 600); 
+  // 2. Fetch data using SWR
+  // SWR automatically handles the isLoading and error states for us!
+  const { data: rawWorkers, error, isLoading } = useSWR<WorkerDB[]>(
+    'http://localhost:5001/api/v1/workers', 
+    fetcher
+  );
 
-      } catch (error) {
-        console.error("Failed to fetch workers", error);
-        setIsLoading(false);
-      }
-    };
+  // 3. Map Database Data to UI Data safely
+  const workers: WorkerUI[] = rawWorkers ? rawWorkers.map((dbWorker) => ({
+    id: dbWorker.id,
+    displayId: dbWorker.id.substring(0, 6).toUpperCase(),
+    name: dbWorker.full_name,
+    status: dbWorker.status || 'ACTIVE',
+    estate: "Main Estate", // Placeholder until you join the estates table
+    crop: "MIXED", 
+    role: dbWorker.worker_type === 'CASUAL' ? 'Tapper' : 'Supervisor',
+    phone: dbWorker.contact || "No Contact",
+    location: dbWorker.address || "No Address",
+    joinedDate: dbWorker.joined_date 
+      ? new Date(dbWorker.joined_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : "Unknown",
+    dailyRate: "2,500" // Placeholder until wage logic is added
+  })) : [];
 
-    loadData();
-  }, []);
-
+  // 4. Filter the mapped data
   const filteredWorkers = workers.filter(worker => 
     worker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     worker.displayId.toLowerCase().includes(searchQuery.toLowerCase())
@@ -74,13 +86,20 @@ export default function WorkersPage() {
           </button>
         </div>
 
+        {/* Error State */}
+        {error && (
+          <div className="w-full p-4 mb-6 bg-red-50 border border-red-100 rounded-xl text-red-600 font-medium">
+            Failed to load workers. Make sure your Express server is running on port 5001.
+          </div>
+        )}
+
         {/* Loading State */}
         {isLoading ? (
           <div className="w-full h-64 flex flex-col items-center justify-center gap-3">
             <div className="w-8 h-8 border-4 border-emerald-100 border-t-[#00B87C] rounded-full animate-spin"></div>
             <p className="text-slate-500 font-medium text-sm">Loading workforce data...</p>
           </div>
-        ) : (
+        ) : !error && (
           /* The Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
             {filteredWorkers.length > 0 ? (
@@ -98,36 +117,3 @@ export default function WorkersPage() {
     </div>
   );
 }
-
-const MOCK_WORKERS: WorkerUI[] = [
-  {
-    id: "uuid-1", displayId: "EMP001", name: "Rajesh Kumar", status: "ACTIVE",
-    estate: "Green Valley Estate", crop: "RUBBER", role: "Tapper",
-    phone: "+94 77 123 4567", location: "Kandy", joinedDate: "Jan 15, 2024", dailyRate: "2,500"
-  },
-  {
-    id: "uuid-2", displayId: "EMP002", name: "Priya Fernando", status: "ACTIVE",
-    estate: "Highland Tea Estate", crop: "TEA", role: "Plucker",
-    phone: "+94 77 234 5678", location: "Nuwara Eliya", joinedDate: "Feb 1, 2024", dailyRate: "2,200"
-  },
-  {
-    id: "uuid-3", displayId: "EMP003", name: "Sunil Perera", status: "ACTIVE",
-    estate: "Green Valley Estate", crop: "RUBBER", role: "Supervisor",
-    phone: "+94 77 345 6789", location: "Kandy", joinedDate: "Nov 20, 2023", dailyRate: "3,500"
-  },
-  {
-    id: "uuid-4", displayId: "EMP004", name: "Kamala Silva", status: "ACTIVE",
-    estate: "Mountain View Tea", crop: "TEA", role: "Plucker",
-    phone: "+94 71 456 7890", location: "Badulla", joinedDate: "Mar 10, 2024", dailyRate: "2,200"
-  },
-  {
-    id: "uuid-5", displayId: "EMP005", name: "Nimal Jayawardena", status: "ACTIVE",
-    estate: "Riverside Rubber", crop: "RUBBER", role: "Tapper",
-    phone: "+94 72 567 8901", location: "Kegalle", joinedDate: "Dec 05, 2023", dailyRate: "2,500"
-  },
-  {
-    id: "uuid-6", displayId: "EMP006", name: "Sandya Wickramasinghe", status: "INACTIVE",
-    estate: "Highland Tea Estate", crop: "TEA", role: "Plucker",
-    phone: "+94 78 678 9012", location: "Nuwara Eliya", joinedDate: "Aug 12, 2023", dailyRate: "2,200"
-  }
-];
